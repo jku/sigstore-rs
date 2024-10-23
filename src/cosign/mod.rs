@@ -36,7 +36,7 @@
 //! In case you want to mock sigstore interactions inside of your own code, you
 //! can implement the [`CosignCapabilities`] trait inside of your test suite.
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use async_trait::async_trait;
 use tracing::warn;
@@ -46,7 +46,6 @@ use crate::registry::{Auth, PushResponse};
 
 use crate::crypto::{CosignVerificationKey, Signature};
 use crate::errors::SigstoreError;
-use base64::{engine::general_purpose::STANDARD as BASE64_STD_ENGINE, Engine as _};
 use pkcs8::der::Decode;
 use x509_cert::Certificate;
 
@@ -126,9 +125,9 @@ pub trait CosignCapabilities {
 
     /// Push [`SignatureLayer`] objects to the registry. This function will do
     /// the following steps:
-    /// * Generate a series of [`oci_distribution::client::ImageLayer`]s due to
+    /// * Generate a series of [`oci_client::client::ImageLayer`]s due to
     /// the given [`Vec<SignatureLayer>`].
-    /// * Generate a `OciImageManifest` of [`oci_distribution::manifest::OciManifest`]
+    /// * Generate a `OciImageManifest` of [`oci_client::manifest::OciManifest`]
     /// due to the given `source_image_digest` and `signature_layers`. It supports
     /// to be extended when newly published
     /// [Referrers API of OCI Registry v1.1.0](https://github.com/opencontainers/distribution-spec/blob/v1.1.0-rc1/spec.md#listing-referrers),
@@ -146,7 +145,7 @@ pub trait CosignCapabilities {
     /// - `signature_layers`: [`SignatureLayer`] objects containing signature information
     async fn push_signature(
         &mut self,
-        annotations: Option<HashMap<String, String>>,
+        annotations: Option<BTreeMap<String, String>>,
         auth: &Auth,
         target_reference: &OciReference,
         signature_layers: Vec<SignatureLayer>,
@@ -155,13 +154,13 @@ pub trait CosignCapabilities {
     /// Verifies the signature produced by cosign when signing the given blob via the `cosign sign-blob` command
     ///
     /// The parameters:
-    /// * `cert`: a PEM encoded x509 certificate that contains the public key used to verify the signature
+    /// * `cert`: a PEM encoded x509 certificate that contains the public key used to verify the signature.
+    ///   Note that cert is not double-base64-encoded like the output of sigstore/cosign is.
     /// * `signature`: the base64 encoded signature of the blob that has to be verified
     /// * `blob`: the contents of the blob
     ///
     /// This function returns `Ok())` when the given signature has been verified, otherwise returns an `Err`.
     fn verify_blob(cert: &str, signature: &str, blob: &[u8]) -> Result<()> {
-        let cert = BASE64_STD_ENGINE.decode(cert)?;
         let pem = pem::parse(cert)?;
         let cert = Certificate::from_der(pem.contents()).map_err(|e| {
             SigstoreError::PKCS8SpkiError(format!("parse der into cert failed: {e}"))
@@ -337,7 +336,7 @@ TNMea7Ix/stJ5TfcLLeABLE4BNJOsQ4vnBHJ
     const SIGNED_IMAGE: &str = "busybox:1.34";
 
     pub(crate) fn get_fulcio_cert_pool() -> CertificatePool {
-        fn pem_to_der<'a>(input: &'a str) -> CertificateDer<'a> {
+        fn pem_to_der(input: &str) -> CertificateDer<'_> {
             let pem_cert = pem::parse(input).unwrap();
             assert_eq!(pem_cert.tag(), "CERTIFICATE");
             CertificateDer::from(pem_cert.into_contents())
@@ -357,7 +356,7 @@ TNMea7Ix/stJ5TfcLLeABLE4BNJOsQ4vnBHJ
         let email = "alice@example.com".to_string();
         let issuer = "an issuer".to_string();
 
-        let mut annotations: HashMap<String, String> = HashMap::new();
+        let mut annotations: BTreeMap<String, String> = BTreeMap::new();
         annotations.insert("key1".into(), "value1".into());
         annotations.insert("key2".into(), "value2".into());
 
@@ -370,7 +369,7 @@ TNMea7Ix/stJ5TfcLLeABLE4BNJOsQ4vnBHJ
             cert_signature.subject = cert_subj;
             sl.certificate_signature = Some(cert_signature);
 
-            let mut extra: HashMap<String, serde_json::Value> = annotations
+            let mut extra: BTreeMap<String, serde_json::Value> = annotations
                 .iter()
                 .map(|(k, v)| (k.clone(), json!(v)))
                 .collect();
@@ -422,7 +421,7 @@ TNMea7Ix/stJ5TfcLLeABLE4BNJOsQ4vnBHJ
             cert_signature.subject = cert_subj;
             sl.certificate_signature = Some(cert_signature);
 
-            let mut extra: HashMap<String, serde_json::Value> = HashMap::new();
+            let mut extra: BTreeMap<String, serde_json::Value> = BTreeMap::new();
             extra.insert("something extra".into(), json!("value extra"));
 
             let mut simple_signing = sl.simple_signing;
@@ -470,7 +469,7 @@ TNMea7Ix/stJ5TfcLLeABLE4BNJOsQ4vnBHJ
             cert_signature.subject = cert_subj;
             sl.certificate_signature = Some(cert_signature);
 
-            let mut extra: HashMap<String, serde_json::Value> = HashMap::new();
+            let mut extra: BTreeMap<String, serde_json::Value> = BTreeMap::new();
             extra.insert("something extra".into(), json!("value extra"));
 
             let mut simple_signing = sl.simple_signing;
@@ -652,8 +651,8 @@ TNMea7Ix/stJ5TfcLLeABLE4BNJOsQ4vnBHJ
             .registry_client
             .pull(
                 &SIGNED_IMAGE.parse().expect("failed to parse image ref"),
-                &oci_distribution::secrets::RegistryAuth::Anonymous,
-                vec![oci_distribution::manifest::IMAGE_DOCKER_LAYER_GZIP_MEDIA_TYPE],
+                &oci_client::secrets::RegistryAuth::Anonymous,
+                vec![oci_client::manifest::IMAGE_DOCKER_LAYER_GZIP_MEDIA_TYPE],
             )
             .await
             .expect("pull test image failed");
@@ -664,7 +663,7 @@ TNMea7Ix/stJ5TfcLLeABLE4BNJOsQ4vnBHJ
                 &image_ref.oci_reference,
                 &data.layers[..],
                 data.config.clone(),
-                &oci_distribution::secrets::RegistryAuth::Anonymous,
+                &oci_client::secrets::RegistryAuth::Anonymous,
                 None,
             )
             .await
