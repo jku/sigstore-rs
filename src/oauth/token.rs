@@ -23,6 +23,11 @@ use base64::{engine::general_purpose::STANDARD_NO_PAD as base64, Engine as _};
 use crate::errors::SigstoreError;
 
 #[derive(Deserialize)]
+pub struct FederatedClaims {
+    pub connector_id: Option<String>,
+}
+
+#[derive(Deserialize)]
 pub struct Claims {
     pub aud: String,
     #[serde(with = "chrono::serde::ts_seconds")]
@@ -33,6 +38,7 @@ pub struct Claims {
     pub email: Option<String>,
     pub iss: String,
     pub sub: Option<String>,
+    pub federated_claims: Option<FederatedClaims>,
 }
 
 pub type UnverifiedClaims = Claims;
@@ -64,7 +70,17 @@ impl fmt::Display for IdentityClaim {
 pub struct IdentityToken {
     original_token: String,
     claims: UnverifiedClaims,
+
+    /// The identity claim
+    ///
+    /// Depending on the issuer this may be an email or a subject claim
     pub identity_claim: IdentityClaim,
+
+    /// The ultimate identity issuer claim
+    ///
+    /// This is the final identity issuer so it may be the OIDC provider that the federating OIDC
+    /// provider (such as oauth2.sigstore.dev/auth) federated to.
+    pub issuer_claim: String,
 }
 
 impl IdentityToken {
@@ -135,10 +151,21 @@ impl TryFrom<&str> for IdentityToken {
             }
         };
 
+        // Figure out the ultimate issuer: if the issuer is a federating issuer like
+        // oauth2.sigstore.dev/auth we find the ultimate issuer "connector_id"
+        let issuer = match &claims.federated_claims {
+            None => claims.iss.clone(),
+            Some(federated_claims) => match &federated_claims.connector_id {
+                None => claims.iss.clone(),
+                Some(connector_id) => connector_id.clone(),
+            },
+        };
+
         Ok(IdentityToken {
             original_token: value.to_owned(),
             claims,
             identity_claim: identity,
+            issuer_claim: issuer,
         })
     }
 }

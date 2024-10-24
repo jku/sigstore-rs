@@ -86,7 +86,8 @@ fn sign(artifact_path: &PathBuf) {
 
     let token = authorize();
     let identity = token.identity_claim.to_string();
-    debug!("Signing with {}", identity);
+    let issuer = token.issuer_claim.clone();
+    debug!("Signing with {} with issuer {}", identity, issuer);
 
     let signing_artifact = SigningContext::production().and_then(|ctx| {
         ctx.blocking_signer(token)
@@ -102,10 +103,12 @@ fn sign(artifact_path: &PathBuf) {
             panic!("Failed to sign: {}", e);
         }
     }
+    println!("Signed bundle {}. Verify with:", bundle_path.display());
     println!(
-        "Created signature bundle {} with identity {}",
-        bundle_path.display(),
-        identity
+        "    bundle verify --identity {} --issuer {} {}",
+        identity,
+        issuer,
+        artifact_path.display()
     );
 }
 
