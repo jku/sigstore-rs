@@ -3,9 +3,10 @@ format used here is supported by most Sigstore clients but notably cosign requir
 `--new-bundle-format` to do so.
 
 This example uses `sigstore::bundle` for signing and verification. The sign subcommand uses
-`sigstore::oauth` for interactive OIDC authorization. In addition to the bundle format, a
-notable difference compared to the "cosign" examples is that `sigstore::bundle` also handles
-the Sigstore trust root update before signing or verifying.
+`sigstore::oauth` for interactive OIDC authorization (when ambient OIDC identities are not
+found). In addition to the bundle format, a notable difference compared to the "cosign"
+examples is that `sigstore::bundle` also handles the Sigstore trust root update before
+signing or verifying.
 
 ### Sign README.md
 

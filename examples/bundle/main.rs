@@ -84,7 +84,12 @@ fn sign(artifact_path: &PathBuf) {
         std::process::exit(1);
     });
 
-    let token = authorize();
+    // try detecting ambient identity first (e.g. GitHub Actions), then do interactive auth with a web browser
+    let token = match ci_id::detect_credentials(Some("sigstore")) {
+        Ok(token_str) => oauth::IdentityToken::try_from(token_str.as_str()).unwrap(),
+        Err(_) => interactive_authorize(),
+    };
+
     let identity = token.identity_claim.to_string();
     let issuer = token.issuer_claim.clone();
     debug!("Signing with {} with issuer {}", identity, issuer);
@@ -139,7 +144,7 @@ fn verify(artifact_path: &PathBuf, identity: &str, issuer: &str) {
     println!("Verified")
 }
 
-fn authorize() -> oauth::IdentityToken {
+fn interactive_authorize() -> oauth::IdentityToken {
     let oidc_url = oauth::openidflow::OpenIDAuthorize::new(
         "sigstore",
         "",
